@@ -6,6 +6,9 @@ import requests
 from random import uniform
 
 
+AGE_INTERVALS = [(0, 18), (18, 21), (21, 24), (24, 27), (27, 30), (30, 35), (35, 45), (45, 0)]
+
+
 def _check_artist_names(artist_names):
     if isinstance(artist_names, list):
         if all([isinstance(x, str) for x in artist_names]):
@@ -111,11 +114,14 @@ class VkApi:
 
         return artist_ids
 
-    def get_audience_count_by_artist_ids(self, artist_ids=None):
+    def get_audience_count_by_artist_ids(self, artist_ids=None, sex=None, age_from=0, age_to=0):
         """
         Возвращает словарь с размерами аудиторий артистов по их айдишкам
 
         :param artist_ids:  list or int
+        :param sex:         'male', 'female' or None
+        :param age_to:      int
+        :param age_from:    int
         :return:            dict, {artist_id, audience_count}
         """
         if artist_ids is not None:
@@ -124,9 +130,17 @@ class VkApi:
             if self.artist_ids is None:
                 raise AttributeError('artist_ids attribute necessarily need to get_audience_count')
 
+        if sex == 'male':
+            sex = 2
+        elif sex == 'female':
+            sex = 1
+        else:
+            sex = 0
+
         audience_count = {}
         for artist_id in self.artist_ids:
-            criteria = json.dumps({'music_artists_formula': artist_id})
+            criteria = json.dumps({'music_artists_formula': artist_id, 'sex': sex,
+                                   'age_from': age_from, 'age_to': age_to})
             url = f'https://api.vk.com/method/ads.getTargetingStats?access_token={self.token}&v=5.110' \
                   f'&account_id={self.account_id}&link_url={self.link_url}&criteria={criteria}'
             resp = self.session.get(url).json()
@@ -135,7 +149,7 @@ class VkApi:
                 audience_count[artist_id] = count
             except KeyError:
                 print(resp)
-            time.sleep(uniform(0.4, 0.5))
+            time.sleep(uniform(0.6, 0.8))
 
         return audience_count
 
@@ -171,3 +185,39 @@ class VkApi:
 
         return audience_count
 
+    def get_audience_count_by_artist_name_per_socdem(self, artist_names):
+        """
+        Возвращает словарь с размерами аудиторий артистов по их именам
+
+        :param artist_names:    list or str
+        :return:                dict, {artist_name: {audience_count_per_socdem_dict}}
+        """
+        if artist_names is not None:
+            self.artist_names = _check_artist_names(artist_names)
+        else:
+            if self.artist_names is None:
+                raise AttributeError('artist_name attribute necessarily need to get_artist_ids')
+
+        audience_count = {}
+        for name in self.artist_names:
+            url = f'https://api.vk.com/method/ads.getMusicians?access_token={self.token}&v=5.110&artist_name={name}'
+            resp = self.session.get(url).json()
+            try:
+                founded_artists = resp['response']['items']
+                for artist in founded_artists:
+                    if artist['name'].lower() == name.lower():
+                        artist_id = artist['id']
+                        counts_dict = {'all': self.get_audience_count_by_artist_ids(artist_id)[artist_id]}
+                        for age_from, age_to in AGE_INTERVALS:
+                            for sex in ['male', 'female']:
+                                count = self.get_audience_count_by_artist_ids(artist_id, sex,
+                                                                              age_from, age_to)[artist_id]
+                                counts_dict[f'{sex}_{age_from}-{age_to}'] = count
+                        audience_count[artist['name']] = counts_dict
+                        break
+            except KeyError:
+                print(resp)
+
+            time.sleep(uniform(0.4, 0.5))
+
+        return audience_count

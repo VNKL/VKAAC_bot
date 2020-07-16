@@ -1,4 +1,5 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram import ParseMode
 from models import VkApi
 import settings
 
@@ -56,18 +57,35 @@ def get_audience_count(update, context):
         username = update.effective_user.username
         text = update.message.text
 
-        audience_count = vk.get_audience_count_by_artist_name(text)
+        context.bot.send_message(chat_id=chat_id,
+                                 text='Иду за инфой в ВК, это может занять некоторое время. '
+                                      'Много нулевых размеров аудиторий означают лаги на стороне ВК')
+
+        audience_count = vk.get_audience_count_by_artist_name_per_socdem(text)
 
         if audience_count:
-            artist_audience_count = audience_count[text]
+            answer_text = _api_response_to_text(audience_count)
             context.bot.send_message(chat_id=chat_id,
-                                     text=f'{text}: {artist_audience_count}')
+                                     text=answer_text,
+                                     parse_mode=ParseMode.HTML)
             print(f"@{username} get audience count for '{text}'")
         else:
             context.bot.send_message(chat_id=chat_id,
-                                     text=f'В ВК не нашло артиста с именем "{text}". '
+                                     text=f'В ВК не нашлось артиста с именем "{text}". '
                                           f'Проверь правильность написания его имени')
             print(f"@{username} failed with get audience count for '{text}'")
+
+
+def _api_response_to_text(response_dict):
+
+    artist_name = list(response_dict.keys())[0]
+
+    text = f'<b>{artist_name}</b>\n\n'
+
+    for socdem, count in response_dict[artist_name].items():
+        text += f'<b>{socdem}:</b> {count}\n'
+
+    return text
 
 
 def main():
